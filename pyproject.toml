@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "cherrybench"
+version = "0.1.0"
+description = ""
+authors = ["Sam Kaufman <kaufmans@cs.washington.edu>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+gspread = "^5.12.4"
+pydrive2 = "^1.19.0"
+google-auth = "^2.26.2"
+google-auth-oauthlib = "^1.2.0"
+docker = "^7.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
