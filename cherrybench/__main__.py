@@ -8,6 +8,9 @@ import tomllib
 from . import host_config, lscpu, reporting
 from .jobs import DockerfileJob
 
+MIN_SAMPLES = 5
+MIN_RUNTIME = 5  # seconds
+
 logger = logging.getLogger(__name__)
 
 arg_parser = argparse.ArgumentParser()
@@ -52,6 +55,17 @@ def load_config(input_file):
     return (jobs, reporters)
 
 
+def run_job_to_sufficiency(job, output_dir, logical_cpus):
+    inner_loop_count = MIN_SAMPLES
+    samps = None
+    # TODO: During timing phase, just run the job with outer loop count of 1.
+    while not samps or any((r * inner_loop_count) < MIN_RUNTIME for r in samps):
+        samps = job.run(output_dir, inner_loop_count, logical_cpus)
+        print(f"inner_loop_count={inner_loop_count}, samps={samps}")
+        inner_loop_count *= min(100, max(2, MIN_RUNTIME / samps[0]))
+    return samps
+
+
 def run(jobs, reporters):
     # Find the logical cores corresponding to the first physical core.
     first_cpus = {c.id for c in lscpu.system_topology().logical_cpus if c.core == 0}
@@ -68,7 +82,7 @@ def run(jobs, reporters):
                 output_dir = pathlib.Path(output_dir)
                 logger.debug("Temporary output directory is %s", output_dir)
                 start_time = datetime.datetime.now()
-                runtime_samples = job.run(output_dir, 300, first_cpus)
+                runtime_samples = run_job_to_sufficiency(job, output_dir, first_cpus)
                 for reporter in reporters:
                     reporter.log_result(
                         start_time,
