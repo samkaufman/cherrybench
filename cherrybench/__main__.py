@@ -61,7 +61,6 @@ def run_job_to_sufficiency(job, output_dir, logical_cpus):
     # TODO: During timing phase, just run the job with outer loop count of 1.
     while not samps or any((r * inner_loop_count) < MIN_RUNTIME for r in samps):
         samps = job.run(output_dir, inner_loop_count, logical_cpus)
-        print(f"inner_loop_count={inner_loop_count}, samps={samps}")
         inner_loop_count *= min(100, max(2, MIN_RUNTIME / samps[0]))
     return samps
 
