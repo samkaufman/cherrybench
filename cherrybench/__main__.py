@@ -58,7 +58,7 @@ def load_config(input_file):
 def run_job_to_sufficiency(job, output_dir, logical_cpus):
     inner_loop_count = MIN_SAMPLES
     samps = None
-    # TODO: During timing phase, just run the job with outer loop count of 1.
+    # TODO: Tell user and quit if increaseing loop count doesn't increase time.
     while not samps or any((r * inner_loop_count) < MIN_RUNTIME for r in samps):
         samps = job.run(output_dir, inner_loop_count, logical_cpus)
         inner_loop_count *= min(100, max(2, MIN_RUNTIME / samps[0]))
