@@ -72,7 +72,7 @@ def run(jobs, reporters):
     logger.info("First physical core corresponds to logical CPUs: %s", first_cpus)
 
     for job in jobs:
-        logger.info("Preparing job %s", job.name)
+        logger.info("Preparing job %s,%s,%s", job.name, job.size, job.backend_name)
         job.prepare()
     with host_config.configure_machine():
         for job in jobs:
