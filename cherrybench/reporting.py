@@ -46,6 +46,11 @@ class GSheetsReporter:
         uploaded_url = self._upload_dir(
             local_dir,
         )
+        
+        glops_per_sec = ""
+        if job.gflops is not None:
+            glops_per_sec = job.gflops / runtime_secs
+        
         row = [
             str(start_time),
             self.hostname,
@@ -54,7 +59,7 @@ class GSheetsReporter:
             job.batch_size,
             job.backend_name,
             runtime_secs,
-            "",
+            glops_per_sec,
             ", ".join(f"{s:.8f}" for s in runtime_samples),
             uploaded_url,
             "",

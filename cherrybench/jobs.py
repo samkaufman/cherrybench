@@ -1,6 +1,7 @@
 import dataclasses
 import pathlib
 import sys
+from typing import Optional
 
 import docker
 import docker.models
@@ -9,6 +10,7 @@ import docker.types
 
 _DOCKER_CLIENT: docker.DockerClient = None # type: ignore
 _DOCKER_EXCEPTION_STOP_TIMEOUT = 2
+
 
 @dataclasses.dataclass
 class DockerfileJob:
@@ -19,6 +21,7 @@ class DockerfileJob:
     docker_path: pathlib.Path
     docker_build_args: dict[str, str]
     command: list[str]
+    gflops: Optional[float] = None
 
     def __post_init__(self):
         # Initialize the global Docker client if needed.
@@ -29,12 +32,13 @@ class DockerfileJob:
     def prepare(self):
         global _DOCKER_CLIENT
         image, _ = _DOCKER_CLIENT.images.build(
-            path=str(self.docker_path), rm=False,
-            buildargs=self.docker_build_args
+            path=str(self.docker_path), rm=False, buildargs=self.docker_build_args
         )  # type: ignore
         self.image = image
 
-    def run(self, output_dir: pathlib.Path, inner_steps: int, logical_cpus: set[int]) -> list[float]:
+    def run(
+        self, output_dir: pathlib.Path, inner_steps: int, logical_cpus: set[int]
+    ) -> list[float]:
         global _DOCKER_CLIENT
         assert output_dir.is_dir()
         e = {
@@ -43,9 +47,13 @@ class DockerfileJob:
         }
         v = {str(output_dir): {"bind": "/cherrybench_output", "mode": "rw"}}
         container = _DOCKER_CLIENT.containers.run(
-            self.image.id, self.command, environment=e, volumes=v, detach=True,
+            self.image.id,
+            self.command,
+            environment=e,
+            volumes=v,
+            detach=True,
             cap_add=["SYS_NICE"],
-            cpuset_cpus=','.join(str(c) for c in logical_cpus),
+            cpuset_cpus=",".join(str(c) for c in logical_cpus),
             #
             # TODO: Run at REALTIME priority
             # cpu_rt_runtime=1000000,

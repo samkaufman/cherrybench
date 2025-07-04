@@ -36,6 +36,7 @@ def load_config(input_file):
                     docker_path=pathlib.Path(job_entry["docker_path"]),
                     docker_build_args=job_entry.get("docker_build_args", {}),
                     command=job_entry["command"],
+                    gflops=job_entry.get("gflops"),
                 )
             )
 
