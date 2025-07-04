@@ -53,7 +53,12 @@ def load_config(input_file):
             else:
                 raise ValueError(f"Unknown reporter type {reporter_entry['type']}")
 
-    return (jobs, reporters)
+        # Load optional max_work_time (in seconds)
+        max_work_time = data.get("max_work_time")
+        if max_work_time is not None:
+            max_work_time = float(max_work_time)
+
+    return (jobs, reporters, max_work_time)
 
 
 def run_job_to_sufficiency(job, output_dir, logical_cpus):
@@ -66,17 +71,34 @@ def run_job_to_sufficiency(job, output_dir, logical_cpus):
     return samps
 
 
-def run(jobs, reporters):
+def run(jobs, reporters, max_work_time=None):
     # Find the logical cores corresponding to the first physical core.
     first_cpus = {c.id for c in lscpu.system_topology().logical_cpus if c.core == 0}
     assert first_cpus
     logger.info("First physical core corresponds to logical CPUs: %s", first_cpus)
+
+    process_start_time = datetime.datetime.now()
+    if max_work_time is not None:
+        logger.info("Maximum work time set to %.1f seconds", max_work_time)
 
     for job in jobs:
         logger.info("Preparing job %s,%s,%s", job.name, job.size, job.backend_name)
         job.prepare()
     with host_config.configure_machine():
         for job in jobs:
+            # Check if we should stop starting new jobs due to time limit
+            if max_work_time is not None:
+                elapsed_time = (
+                    datetime.datetime.now() - process_start_time
+                ).total_seconds()
+                if elapsed_time >= max_work_time:
+                    logger.info(
+                        "Maximum work time (%.1f seconds) reached. Stopping before job %s",
+                        max_work_time,
+                        job.name,
+                    )
+                    break
+
             logger.info("Running job %s", job.name)
             with tempfile.TemporaryDirectory() as output_dir:
                 output_dir = pathlib.Path(output_dir)
