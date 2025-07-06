@@ -8,7 +8,7 @@ import docker.models
 import docker.models.containers
 import docker.types
 
-_DOCKER_CLIENT: docker.DockerClient = None # type: ignore
+_DOCKER_CLIENT: docker.DockerClient = None  # type: ignore
 _DOCKER_EXCEPTION_STOP_TIMEOUT = 2
 
 

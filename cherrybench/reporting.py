@@ -6,6 +6,8 @@ import pydrive2.auth
 import pydrive2.drive
 import oauth2client.service_account
 import mimetypes
+import time
+import random
 import google.oauth2.service_account
 from typing import Any, Optional
 
@@ -46,11 +48,11 @@ class GSheetsReporter:
         uploaded_url = self._upload_dir(
             local_dir,
         )
-        
+
         glops_per_sec = ""
         if job.gflops is not None:
             glops_per_sec = job.gflops / runtime_secs
-        
+
         row = [
             str(start_time),
             self.hostname,
@@ -67,7 +69,11 @@ class GSheetsReporter:
             "",
             str(is_rt),
         ]
-        self.sheet.append_row(row, value_input_option="USER_ENTERED")
+
+        # Retry the sheet append operation with exponential backoff
+        _retry_with_backoff(
+            lambda: self.sheet.append_row(row, value_input_option="USER_ENTERED")
+        )
         logger.debug("Logged row to Google Sheets: %s", row)
 
     def _upload_dir(
@@ -79,9 +85,11 @@ class GSheetsReporter:
 
         # Get root folder in Drive based on provided name
         if not parent_id:
-            remote_root_candidates = self.drive.ListFile(
-                {"q": f"title = '{self.remote_root_name}' and trashed = False"}
-            ).GetList()
+            remote_root_candidates = _retry_with_backoff(
+                lambda: self.drive.ListFile(
+                    {"q": f"title = '{self.remote_root_name}' and trashed = False"}
+                ).GetList(),
+            )
             if not remote_root_candidates:
                 raise ValueError(
                     f"Found no folders with title '{self.remote_root_name}'"
@@ -99,7 +107,7 @@ class GSheetsReporter:
         }
         root_meta["parents"] = [{"id": parent_id}]
         root_item = self.drive.CreateFile(root_meta)
-        root_item.Upload()
+        _retry_with_backoff(lambda: root_item.Upload())
 
         for entry in local_dir.iterdir():
             if entry.is_file():
@@ -110,9 +118,38 @@ class GSheetsReporter:
                     file_meta["mimeType"] = guess[0]
                 f = self.drive.CreateFile(file_meta)
                 f.SetContentFile(str(entry.absolute()))
-                f.Upload()
+                _retry_with_backoff(lambda: f.Upload())
             else:
                 assert entry.is_dir()
                 self._upload_dir(entry, parent_id=root_item["id"])
 
         return root_item["alternateLink"]
+
+
+def _retry_with_backoff(func, max_retries=5, base_delay=3.0, max_delay=60.0):
+    """Retry a function with exponential backoff upon `gspread` API errors.
+
+    Args:
+        func: Function to retry
+        max_retries: Maximum number of retry attempts
+        base_delay: Base delay in seconds
+        max_delay: Maximum delay in seconds
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return func()
+        except gspread.exceptions.APIError as e:
+            if attempt == max_retries:
+                logger.error(f"All retry attempts failed. Last API error: {e}")
+                raise
+
+            # Calculate delay with exponential backoff and jitter
+            delay = min(base_delay * (2**attempt), max_delay)
+            jitter = random.uniform(0.1, 0.3) * delay
+            total_delay = delay + jitter
+
+            logger.warning(
+                f"API call failed (attempt {attempt + 1}/{max_retries + 1}): {e}"
+            )
+            logger.info(f"Retrying in {total_delay:.2f} seconds...")
+            time.sleep(total_delay)
