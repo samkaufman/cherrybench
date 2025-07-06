@@ -2,6 +2,7 @@ import argparse
 import datetime
 import logging
 import pathlib
+import random
 import tempfile
 import tomllib
 
@@ -57,6 +58,16 @@ def load_config(input_file):
         max_work_time = data.get("max_work_time")
         if max_work_time is not None:
             max_work_time = float(max_work_time)
+
+        # Shuffle jobs if `order` is set to "random"
+        order = data.get("order")
+        if order == "random":
+            random.shuffle(jobs)
+            logger.debug("Shuffling jobs in random order")
+        elif order is not None and order != "sequential":
+            raise ValueError(
+                f"Unknown order value '{order}'. Supported values are 'random' and 'sequential'"
+            )
 
     return (jobs, reporters, max_work_time)
 
