@@ -16,18 +16,28 @@ logger = logging.getLogger(__name__)
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument("-v", "--verbose", action="store_true")
+arg_parser.add_argument(
+    "--filter",
+    nargs="*",
+    help="Only run jobs whose name matches one of the given filters (substring match). Can be specified multiple times or as a space-separated list.",
+)
 arg_parser.add_argument("CONFIG", type=pathlib.Path)
 args = arg_parser.parse_args()
 
 logging.basicConfig(level=(logging.DEBUG if args.verbose else logging.INFO))
 
 
-def load_config(input_file):
+def load_config(input_file, job_filters=None):
     with input_file.open("rb") as fo:
         data = tomllib.load(fo)
 
         jobs = []
         for job_entry in data["jobs"]:
+            if job_filters and not any(
+                f in job_entry["name"] or f in job_entry["backend_name"]
+                for f in job_filters
+            ):
+                continue
             jobs.append(
                 DockerfileJob(
                     name=job_entry["name"],
@@ -127,4 +137,4 @@ def run(jobs, reporters, max_work_time=None):
                     )
 
 
-run(*load_config(args.CONFIG))
+run(*load_config(args.CONFIG, job_filters=args.filter))
