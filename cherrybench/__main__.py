@@ -6,7 +6,7 @@ import random
 import tempfile
 import tomllib
 
-from . import host_config, lscpu, reporting
+from . import host_config, reporting
 from .jobs import DockerfileJob
 
 MIN_SAMPLES = 5
@@ -48,6 +48,7 @@ def load_config(input_file, job_filters=None):
                     docker_build_args=job_entry.get("docker_build_args", {}),
                     command=job_entry["command"],
                     gflops=job_entry.get("gflops"),
+                    num_cores=job_entry.get("num_cores", 1),
                 )
             )
 
@@ -82,22 +83,17 @@ def load_config(input_file, job_filters=None):
     return (jobs, reporters, max_work_time)
 
 
-def run_job_to_sufficiency(job, output_dir, logical_cpus):
+def run_job_to_sufficiency(job, output_dir):
     inner_loop_count = MIN_SAMPLES
     samps = None
     # TODO: Tell user and quit if increaseing loop count doesn't increase time.
     while not samps or any((r * inner_loop_count) < MIN_RUNTIME for r in samps):
-        samps = job.run(output_dir, inner_loop_count, logical_cpus)
+        samps = job.run(output_dir, inner_loop_count)
         inner_loop_count *= min(100, max(2, MIN_RUNTIME / samps[0]))
     return samps
 
 
 def run(jobs, reporters, max_work_time=None):
-    # Find the logical cores corresponding to the first physical core.
-    first_cpus = {c.id for c in lscpu.system_topology().logical_cpus if c.core == 0}
-    assert first_cpus
-    logger.info("First physical core corresponds to logical CPUs: %s", first_cpus)
-
     process_start_time = datetime.datetime.now()
     if max_work_time is not None:
         logger.info("Maximum work time set to %.1f seconds", max_work_time)
@@ -125,7 +121,7 @@ def run(jobs, reporters, max_work_time=None):
                 output_dir = pathlib.Path(output_dir)
                 logger.debug("Temporary output directory is %s", output_dir)
                 start_time = datetime.datetime.now()
-                runtime_samples = run_job_to_sufficiency(job, output_dir, first_cpus)
+                runtime_samples = run_job_to_sufficiency(job, output_dir)
                 for reporter in reporters:
                     reporter.log_result(
                         start_time,

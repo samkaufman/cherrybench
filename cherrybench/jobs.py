@@ -1,5 +1,6 @@
 import dataclasses
 import pathlib
+import logging
 import sys
 from typing import Optional
 
@@ -8,8 +9,12 @@ import docker.models
 import docker.models.containers
 import docker.types
 
+from . import lscpu
+
 _DOCKER_CLIENT: docker.DockerClient = None  # type: ignore
 _DOCKER_EXCEPTION_STOP_TIMEOUT = 2
+
+logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass
@@ -22,6 +27,7 @@ class DockerfileJob:
     docker_build_args: dict[str, str]
     command: list[str]
     gflops: Optional[float] = None
+    num_cores: int = 1  # Number of physical cores to use
 
     def __post_init__(self):
         # Initialize the global Docker client if needed.
@@ -36,11 +42,30 @@ class DockerfileJob:
         )  # type: ignore
         self.image = image
 
-    def run(
-        self, output_dir: pathlib.Path, inner_steps: int, logical_cpus: set[int]
-    ) -> list[float]:
+    def run(self, output_dir: pathlib.Path, inner_steps: int) -> list[float]:
         global _DOCKER_CLIENT
         assert output_dir.is_dir()
+
+        topology = lscpu.system_topology()
+        available_cores = set(c.core for c in topology.logical_cpus)
+        if self.num_cores > len(available_cores):
+            raise ValueError(
+                f"Job {self.name} requested {self.num_cores} cores, but only {len(available_cores)} physical cores are available"
+            )
+
+        # Select the first num_cores physical cores
+        selected_cores = sorted(available_cores)[: self.num_cores]
+        logical_cpus = {c.id for c in topology.logical_cpus if c.core in selected_cores}
+
+        # Log which cores this job is using
+        logger.info(
+            "Job %s using %d physical cores (%s) with logical CPUs: %s",
+            self.name,
+            self.num_cores,
+            selected_cores,
+            logical_cpus,
+        )
+
         e = {
             "CHERRYBENCH_OUTPUT_DIR": "/cherrybench_output",
             "CHERRYBENCH_LOOP_STEPS": str(inner_steps),
