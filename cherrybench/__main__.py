@@ -116,7 +116,7 @@ def run(jobs, reporters, max_work_time=None):
                     )
                     break
 
-            logger.info("Running job %s", job.name)
+            logger.info("Running job %s, %s", job.name, job.backend_name)
             with tempfile.TemporaryDirectory() as output_dir:
                 output_dir = pathlib.Path(output_dir)
                 logger.debug("Temporary output directory is %s", output_dir)
