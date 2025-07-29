@@ -18,11 +18,12 @@ arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument("-v", "--verbose", action="store_true")
 arg_parser.add_argument(
     "--filter",
-    nargs="*",
-    help="Only run jobs whose name matches one of the given filters (substring match). Can be specified multiple times or as a space-separated list.",
+    action="append",
+    help="Only run jobs whose name matches all of the given filters (substring match). Can be specified multiple times.",
 )
 arg_parser.add_argument("CONFIG", type=pathlib.Path)
 args = arg_parser.parse_args()
+
 
 logging.basicConfig(level=(logging.DEBUG if args.verbose else logging.INFO))
 
@@ -33,7 +34,7 @@ def load_config(input_file, job_filters=None):
 
         jobs = []
         for job_entry in data["jobs"]:
-            if job_filters and not any(
+            if job_filters and not all(
                 f in job_entry["name"] or f in job_entry["backend_name"]
                 for f in job_filters
             ):
@@ -49,6 +50,7 @@ def load_config(input_file, job_filters=None):
                     command=job_entry["command"],
                     gflops=job_entry.get("gflops"),
                     num_cores=job_entry.get("num_cores", 1),
+                    enable_perf=job_entry.get("enable_perf", False),
                 )
             )
 

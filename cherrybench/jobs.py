@@ -1,6 +1,7 @@
 import dataclasses
-import pathlib
 import logging
+import pathlib
+import platform
 import sys
 from typing import Optional
 
@@ -28,6 +29,7 @@ class DockerfileJob:
     command: list[str]
     gflops: Optional[float] = None
     num_cores: int = 1  # Number of physical cores to use
+    enable_perf: bool = False
 
     def __post_init__(self):
         # Initialize the global Docker client if needed.
@@ -37,9 +39,12 @@ class DockerfileJob:
 
     def prepare(self):
         global _DOCKER_CLIENT
+        build_args = dict(self.docker_build_args)
+        if self.enable_perf:
+            build_args["CHERRYBENCH_HOST_LINUX_VERSION"] = platform.release()
         image, _ = _DOCKER_CLIENT.images.build(
-            path=str(self.docker_path), rm=False, buildargs=self.docker_build_args
-        )  # type: ignore
+            path=str(self.docker_path), rm=False, buildargs=build_args
+        )
         self.image = image
 
     def run(self, output_dir: pathlib.Path, inner_steps: int) -> list[float]:
@@ -79,12 +84,8 @@ class DockerfileJob:
             detach=True,
             cap_add=["SYS_NICE"],
             cpuset_cpus=",".join(str(c) for c in logical_cpus),
-            #
-            # TODO: Run at REALTIME priority
-            # cpu_rt_runtime=1000000,
-            # ulimits=[docker.types.Ulimit(name='rtprio', soft=99, hard=99)],
-            # privileged=True,
-        )
+            privileged=self.enable_perf,
+        )  # type: ignore
         assert isinstance(container, docker.models.containers.Container)
         try:
             exit_code = container.wait()["StatusCode"]

@@ -18,3 +18,15 @@ Each `[job]` in a config. file supports the following fields:
 - `gflops` (number, optional): Total numbers of GFLOPS to complete the job.
 - `num_cores` (integer, default=1): Number of physical CPU cores to bind to the
    container.
+- `enable_perf` (boolean, default=false): Whether to enable Linux perf integration.
+
+### Linux Perf Integration
+
+Jobs can optionally enable Linux perf integration by setting the `enable_perf` to
+`true`. This supports Docker containers running Linux perf by increasing permissions,
+passing in the host's Linux version (for matching), and automatically parsing Linux perf
+output for the benefit of reporters.
+
+- cherrybench will build the Docker image with the `CHERRYBENCH_HOST_LINUX_VERSION`
+  build argument set to the host's Linux version.
+  
