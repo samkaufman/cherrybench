@@ -14,6 +14,7 @@ from . import lscpu
 
 _DOCKER_CLIENT: docker.DockerClient = None  # type: ignore
 _DOCKER_EXCEPTION_STOP_TIMEOUT = 2
+_ASSIGN_CORES = False
 
 logger = logging.getLogger(__name__)
 
@@ -51,40 +52,45 @@ class DockerfileJob:
         global _DOCKER_CLIENT
         assert output_dir.is_dir()
 
-        topology = lscpu.system_topology()
-        available_cores = set(c.core for c in topology.logical_cpus)
-        if self.num_cores > len(available_cores):
-            raise ValueError(
-                f"Job {self.name} requested {self.num_cores} cores, but only {len(available_cores)} physical cores are available"
+        if _ASSIGN_CORES:
+            topology = lscpu.system_topology()
+            available_cores = set(c.core for c in topology.logical_cpus)
+            if self.num_cores > len(available_cores):
+                raise ValueError(
+                    f"Job {self.name} requested {self.num_cores} cores, but only {len(available_cores)} physical cores are available"
+                )
+
+            # Select the first num_cores physical cores
+            selected_cores = sorted(available_cores)[: self.num_cores]
+            logical_cpus = {
+                c.id for c in topology.logical_cpus if c.core in selected_cores
+            }
+
+            # Log which cores this job is using
+            logger.info(
+                "Job %s using %d physical cores (%s) with logical CPUs: %s",
+                self.name,
+                self.num_cores,
+                selected_cores,
+                logical_cpus,
             )
-
-        # Select the first num_cores physical cores
-        selected_cores = sorted(available_cores)[: self.num_cores]
-        logical_cpus = {c.id for c in topology.logical_cpus if c.core in selected_cores}
-
-        # Log which cores this job is using
-        logger.info(
-            "Job %s using %d physical cores (%s) with logical CPUs: %s",
-            self.name,
-            self.num_cores,
-            selected_cores,
-            logical_cpus,
-        )
 
         e = {
             "CHERRYBENCH_OUTPUT_DIR": "/cherrybench_output",
             "CHERRYBENCH_LOOP_STEPS": str(inner_steps),
         }
         v = {str(output_dir): {"bind": "/cherrybench_output", "mode": "rw"}}
+        run_kwargs = {
+            "environment": e,
+            "volumes": v,
+            "detach": True,
+            "cap_add": ["SYS_NICE"],
+            "privileged": self.enable_perf,
+        }
+        if _ASSIGN_CORES:
+            run_kwargs["cpuset_cpus"] = ",".join(str(c) for c in logical_cpus)
         container = _DOCKER_CLIENT.containers.run(
-            self.image.id,
-            self.command,
-            environment=e,
-            volumes=v,
-            detach=True,
-            cap_add=["SYS_NICE"],
-            cpuset_cpus=",".join(str(c) for c in logical_cpus),
-            privileged=self.enable_perf,
+            self.image.id, self.command, **run_kwargs
         )  # type: ignore
         assert isinstance(container, docker.models.containers.Container)
         try:
