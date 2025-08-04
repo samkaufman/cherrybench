@@ -47,6 +47,7 @@ class DockerfileJob:
             path=str(self.docker_path), rm=False, buildargs=build_args
         )
         self.image = image
+        logger.info("Built image: %s", self.image.id)  # TODO: Downgrade to DEBUG
 
     def run(self, output_dir: pathlib.Path, inner_steps: int) -> list[float]:
         global _DOCKER_CLIENT
