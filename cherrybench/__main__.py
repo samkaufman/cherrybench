@@ -11,6 +11,7 @@ from .jobs import DockerfileJob
 
 MIN_SAMPLES = 5
 MIN_RUNTIME = 5  # seconds
+JOB_CHUNK_SIZE = 4  # TODO: Derive from core count
 
 logger = logging.getLogger(__name__)
 
@@ -95,44 +96,47 @@ def run_job_to_sufficiency(job, output_dir):
     return samps
 
 
-def run(jobs, reporters, max_work_time=None):
+def run(jobs, reporters, max_work_time=None) -> None:
     process_start_time = datetime.datetime.now()
     if max_work_time is not None:
         logger.info("Maximum work time set to %.1f seconds", max_work_time)
 
-    for job in jobs:
-        logger.info("Preparing job %s,%s,%s", job.name, job.size, job.backend_name)
-        job.prepare()
-    with host_config.configure_machine():
-        for job in jobs:
-            # Check if we should stop starting new jobs due to time limit
-            if max_work_time is not None:
-                elapsed_time = (
-                    datetime.datetime.now() - process_start_time
-                ).total_seconds()
-                if elapsed_time >= max_work_time:
-                    logger.info(
-                        "Maximum work time (%.1f seconds) reached. Stopping before job %s",
-                        max_work_time,
-                        job.name,
-                    )
-                    break
+    for job_chunk_idx in range(0, len(jobs), JOB_CHUNK_SIZE):
+        chunk = jobs[job_chunk_idx : job_chunk_idx + JOB_CHUNK_SIZE]
+        # TODO: Parallelize the prepare calls below
+        for job in chunk:
+            logger.info("Preparing job %s,%s,%s", job.name, job.size, job.backend_name)
+            job.prepare()
+        with host_config.configure_machine():
+            for job in chunk:
+                # Check if we should stop starting new jobs due to time limit
+                if max_work_time is not None:
+                    elapsed_time = (
+                        datetime.datetime.now() - process_start_time
+                    ).total_seconds()
+                    if elapsed_time >= max_work_time:
+                        logger.info(
+                            "Maximum work time (%.1f seconds) reached. Stopping before job %s",
+                            max_work_time,
+                            job.name,
+                        )
+                        return
 
-            logger.info("Running job %s,%s", job.name, job.backend_name)
-            with tempfile.TemporaryDirectory() as output_dir:
-                output_dir = pathlib.Path(output_dir)
-                logger.debug("Temporary output directory is %s", output_dir)
-                start_time = datetime.datetime.now()
-                runtime_samples = run_job_to_sufficiency(job, output_dir)
-                for reporter in reporters:
-                    reporter.log_result(
-                        start_time,
-                        job,
-                        min(runtime_samples),
-                        runtime_samples,
-                        is_rt=False,  # TODO: Change when RT is supported
-                        local_dir=output_dir,
-                    )
+                logger.info("Running job %s,%s", job.name, job.backend_name)
+                with tempfile.TemporaryDirectory() as output_dir:
+                    output_dir = pathlib.Path(output_dir)
+                    logger.debug("Temporary output directory is %s", output_dir)
+                    start_time = datetime.datetime.now()
+                    runtime_samples = run_job_to_sufficiency(job, output_dir)
+                    for reporter in reporters:
+                        reporter.log_result(
+                            start_time,
+                            job,
+                            min(runtime_samples),
+                            runtime_samples,
+                            is_rt=False,  # TODO: Change when RT is supported
+                            local_dir=output_dir,
+                        )
 
 
 run(*load_config(args.CONFIG, job_filters=args.filter))
