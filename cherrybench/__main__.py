@@ -89,10 +89,20 @@ def load_config(input_file, job_filters=None):
 def run_job_to_sufficiency(job, output_dir):
     inner_loop_count = MIN_SAMPLES
     samps = None
-    # TODO: Tell user and quit if increaseing loop count doesn't increase time.
-    while not samps or any((r * inner_loop_count) < MIN_RUNTIME for r in samps):
+    # TODO: Tell user and quit if increasing loop count doesn't increase time.
+    while True:
         samps = job.run(output_dir, inner_loop_count)
-        inner_loop_count *= min(100, max(2, MIN_RUNTIME / samps[0]))
+        fastest_sample = min(samps)
+        if fastest_sample * inner_loop_count >= MIN_RUNTIME:
+            break
+        inner_loop_count *= min(
+            10, max(2, int(MIN_RUNTIME / fastest_sample * inner_loop_count))
+        )
+        logger.debug(
+            "fastest sample was %s seconds, increasing loop count to %s",
+            fastest_sample,
+            inner_loop_count,
+        )
     return samps
 
 
