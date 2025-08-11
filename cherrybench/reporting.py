@@ -45,13 +45,21 @@ class GSheetsReporter:
         is_rt: bool,
         local_dir: pathlib.Path,
     ):
-        uploaded_url = self._upload_dir(
-            local_dir,
-        )
+        uploaded_url = self._upload_dir(local_dir)
 
-        glops_per_sec = ""
-        if job.gflops is not None:
-            glops_per_sec = job.gflops / runtime_secs
+        median_gflops_per_sec = ""
+        if job.gflops is not None and runtime_samples:
+            gflops_per_sec_samples = [job.gflops / s for s in runtime_samples if s > 0]
+            n = len(gflops_per_sec_samples)
+            if n:
+                sorted_samples = sorted(gflops_per_sec_samples)
+                mid = n // 2
+                if n % 2 == 1:
+                    median_gflops_per_sec = sorted_samples[mid]
+                else:
+                    median_gflops_per_sec = (
+                        sorted_samples[mid - 1] + sorted_samples[mid]
+                    ) / 2
 
         row = [
             str(start_time),
@@ -61,7 +69,7 @@ class GSheetsReporter:
             job.batch_size,
             job.backend_name,
             runtime_secs,
-            glops_per_sec,
+            median_gflops_per_sec,
             ", ".join(f"{s:.8f}" for s in runtime_samples),
             uploaded_url,
             "",
