@@ -10,7 +10,7 @@ from . import host_config, reporting
 from .jobs import DockerfileJob
 
 MIN_SAMPLES = 5
-MIN_RUNTIME = 5  # seconds
+MIN_RUNTIME = 10  # seconds
 JOB_CHUNK_SIZE = 4  # TODO: Derive from core count
 
 logger = logging.getLogger(__name__)
