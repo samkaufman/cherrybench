@@ -28,6 +28,7 @@ class GSheetsReporter:
         self.gc = gspread.Client(creds)
         self.sheet = self.gc.open(gsheet_name).worksheet("Log")
         self.remote_root_name = remote_root_name
+        self._existing_entries_cache: Optional[set[tuple]] = None
 
         gauth = pydrive2.auth.GoogleAuth()
         gauth.auth_method = "service"
@@ -83,6 +84,58 @@ class GSheetsReporter:
             lambda: self.sheet.append_row(row, value_input_option="USER_ENTERED")
         )
         logger.debug("Logged row to Google Sheets: %s", row)
+
+        self._invalidate_cache()
+
+    def has_existing_entry(self, job) -> bool:
+        if self._existing_entries_cache is None:
+            self._load_existing_entries_cache()
+        job_key = (
+            self.hostname,
+            job.name,
+            str(job.size),
+            str(job.batch_size),
+            job.backend_name,
+        )
+        return job_key in (self._existing_entries_cache or set())
+
+    def _load_existing_entries_cache(self):
+        """Load all existing entries from the sheet into memory cache."""
+        logger.debug("Loading existing entries cache from Google Sheets")
+
+        # Get all records from the sheet (skip header row)
+        all_records = _retry_with_backoff(lambda: self.sheet.get_all_values())
+        if not all_records:
+            self._existing_entries_cache = set()
+            return
+
+        # Skip the header row
+        data_rows = all_records[1:] if len(all_records) > 1 else []
+
+        # Create cache of existing entries
+        # Row format: [start_time, hostname, job_name, job_size, batch_size, backend_name, ...]
+        self._existing_entries_cache = set()
+        for row in data_rows:
+            if len(row) >= 6:  # Ensure we have enough columns
+                try:
+                    job_key = tuple(
+                        row[1:6]
+                    )  # hostname, job_name, job_size, batch_size, backend_name
+                    self._existing_entries_cache.add(job_key)
+                except (ValueError, IndexError) as e:
+                    logger.error(
+                        "Skipping malformed row in sheet: %s (error: %s)", row, e
+                    )
+                    continue
+
+        logger.debug(
+            "Loaded %d existing entries into cache", len(self._existing_entries_cache)
+        )
+
+    def _invalidate_cache(self):
+        """Invalidate the existing entries cache to force reload on next check."""
+        self._existing_entries_cache = None
+        logger.debug("Invalidated existing entries cache")
 
     def _upload_dir(
         self,

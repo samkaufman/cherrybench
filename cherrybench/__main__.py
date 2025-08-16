@@ -73,14 +73,39 @@ def load_config(input_file, job_filters=None):
         if max_work_time is not None:
             max_work_time = float(max_work_time)
 
-        # Shuffle jobs if `order` is set to "random"
+        # Process jobs according to `order`
         order = data.get("order")
         if order == "random":
             random.shuffle(jobs)
             logger.debug("Shuffling jobs in random order")
+        elif order == "random-new-first":
+            new_jobs = []
+            existing_jobs = []
+
+            for job in jobs:
+                is_new = True
+                for reporter in reporters:
+                    if reporter.has_existing_entry(job):
+                        is_new = False
+                        break
+
+                if is_new:
+                    new_jobs.append(job)
+                else:
+                    existing_jobs.append(job)
+
+            random.shuffle(new_jobs)
+            random.shuffle(existing_jobs)
+
+            jobs = new_jobs + existing_jobs
+            logger.debug(
+                "Ordered jobs with random-new-first: %d new jobs, %d existing jobs",
+                len(new_jobs),
+                len(existing_jobs),
+            )
         elif order is not None and order != "sequential":
             raise ValueError(
-                f"Unknown order value '{order}'. Supported values are 'random' and 'sequential'"
+                f"Unknown order value '{order}'. Supported values are 'random', 'sequential', and 'random-new-first'"
             )
 
     return (jobs, reporters, max_work_time)
