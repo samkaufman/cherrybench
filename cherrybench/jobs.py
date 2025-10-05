@@ -43,19 +43,9 @@ class DockerfileJob:
         build_args = dict(self.docker_build_args)
         if self.enable_perf:
             build_args["CHERRYBENCH_HOST_LINUX_VERSION"] = platform.release()
-        image, build_logs = _DOCKER_CLIENT.images.build(
+        image, _ = _DOCKER_CLIENT.images.build(
             path=str(self.docker_path), rm=False, buildargs=build_args
         )
-
-        # Log build output
-        for log_entry in build_logs:
-            if "stream" in log_entry:
-                logger.info(log_entry["stream"].rstrip())
-            elif "error" in log_entry:
-                logger.error(log_entry["error"].rstrip())
-            elif "status" in log_entry:
-                logger.debug(log_entry["status"].rstrip())
-
         self.image = image
         logger.info("Built image: %s", self.image.id)  # TODO: Downgrade to DEBUG
 
