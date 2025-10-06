@@ -12,6 +12,8 @@ import docker.types
 
 from . import lscpu
 
+CHERRYBENCH_MOUNT_PATH = "/cherrybench"
+
 _DOCKER_CLIENT: docker.DockerClient = None  # type: ignore
 _DOCKER_EXCEPTION_STOP_TIMEOUT = 2
 _ASSIGN_CORES = False
@@ -59,7 +61,12 @@ class DockerfileJob:
         self.image = image
         logger.info("Built image: %s", self.image.id)  # TODO: Downgrade to DEBUG
 
-    def run(self, output_dir: pathlib.Path, inner_steps: int) -> list[float]:
+    def run(
+        self,
+        output_dir: pathlib.Path,
+        inner_steps: int,
+        cherrybench_dir: Optional[pathlib.Path] = None,
+    ) -> list[float]:
         global _DOCKER_CLIENT
         assert output_dir.is_dir()
 
@@ -91,6 +98,8 @@ class DockerfileJob:
             "CHERRYBENCH_LOOP_STEPS": str(inner_steps),
         }
         v = {str(output_dir): {"bind": "/cherrybench_output", "mode": "rw"}}
+        if cherrybench_dir is not None:
+            v[str(cherrybench_dir)] = {"bind": CHERRYBENCH_MOUNT_PATH, "mode": "rw"}
         run_kwargs = {
             "environment": e,
             "volumes": v,
