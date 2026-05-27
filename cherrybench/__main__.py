@@ -1,6 +1,7 @@
 import argparse
 import datetime
 import logging
+import math
 import pathlib
 import random
 import tempfile
@@ -118,10 +119,14 @@ def run_job_to_sufficiency(job, output_dir, cherrybench_dir):
     while True:
         samps = job.run(output_dir, inner_loop_count, cherrybench_dir)
         fastest_sample = min(samps)
-        if fastest_sample * inner_loop_count >= MIN_RUNTIME:
+        fastest_total_runtime = fastest_sample * inner_loop_count
+        if fastest_total_runtime >= MIN_RUNTIME:
             break
-        inner_loop_count *= min(
-            10, max(2, int(MIN_RUNTIME / fastest_sample * inner_loop_count))
+        inner_loop_count = max(
+            inner_loop_count + 1,
+            math.ceil(
+                inner_loop_count * min(10, MIN_RUNTIME / fastest_total_runtime)
+            ),
         )
         logger.debug(
             "fastest sample was %s seconds, increasing loop count to %s",
