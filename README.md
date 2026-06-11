@@ -20,6 +20,23 @@ Each `[job]` in a config. file supports the following fields:
    container.
 - `enable_perf` (boolean, default=false): Whether to enable Linux perf integration.
 
+## Job Partitioning
+
+To split the same job config across multiple machines, add a top-level
+`[job_partition]` table:
+
+```toml
+[job_partition]
+count = 4
+index = 0
+```
+
+`count` is the total number of partitions, and `index` is the zero-based partition
+to execute on this machine. Cherrybench assigns each job to a partition using a
+deterministic SHA-256 hash of the job's `name`, so every job name maps to the same
+partition on every machine. Jobs with the same `name` always run in the same
+partition.
+
 ### Linux Perf Integration
 
 Jobs can optionally enable Linux perf integration by setting the `enable_perf` to
@@ -29,4 +46,3 @@ output for the benefit of reporters.
 
 - cherrybench will build the Docker image with the `CHERRYBENCH_HOST_LINUX_VERSION`
   build argument set to the host's Linux version.
-  

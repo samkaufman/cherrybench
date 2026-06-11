@@ -7,7 +7,7 @@ import random
 import tempfile
 import tomllib
 
-from . import host_config, reporting
+from . import host_config, partition, reporting
 from .jobs import DockerfileJob
 
 MIN_SAMPLES = 5
@@ -24,10 +24,30 @@ arg_parser.add_argument(
     help="Only run jobs whose name matches all of the given filters (substring match). Can be specified multiple times.",
 )
 arg_parser.add_argument("CONFIG", type=pathlib.Path)
-args = arg_parser.parse_args()
 
 
-logging.basicConfig(level=(logging.DEBUG if args.verbose else logging.INFO))
+def _filter_jobs_by_partition(jobs, partition_config):
+    parsed_config = partition.parse_partition_config(partition_config)
+    if parsed_config is None:
+        return jobs
+
+    partition_count, partition_index = parsed_config
+    selected_jobs = [
+        job
+        for job in jobs
+        if (
+            partition.job_partition_index(job.name, partition_count)
+            == partition_index
+        )
+    ]
+    logger.info(
+        "Selected job partition %d/%d: %d of %d jobs",
+        partition_index,
+        partition_count,
+        len(selected_jobs),
+        len(jobs),
+    )
+    return selected_jobs
 
 
 def load_config(input_file, job_filters=None):
@@ -55,6 +75,8 @@ def load_config(input_file, job_filters=None):
                     enable_perf=job_entry.get("enable_perf", False),
                 )
             )
+
+        jobs = _filter_jobs_by_partition(jobs, data.get("job_partition"))
 
         reporters = []
         for reporter_key, reporter_entry in data["reporters"].items():
@@ -187,4 +209,11 @@ def run(jobs, reporters, max_work_time=None) -> None:
                             )
 
 
-run(*load_config(args.CONFIG, job_filters=args.filter))
+def main():
+    args = arg_parser.parse_args()
+    logging.basicConfig(level=(logging.DEBUG if args.verbose else logging.INFO))
+    run(*load_config(args.CONFIG, job_filters=args.filter))
+
+
+if __name__ == "__main__":
+    main()
