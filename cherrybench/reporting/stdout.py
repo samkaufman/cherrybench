@@ -8,7 +8,7 @@ import sys
 import types
 import unittest
 
-from . import _median_gflops_per_sec
+from .stats import median_gflops_per_sec
 
 STDOUT_COLUMNS = [
     "start_time",
@@ -43,7 +43,7 @@ class StdoutReporter:
             writer.writerow(STDOUT_COLUMNS)
             self._wrote_header = True
 
-        median_gflops_per_sec = _median_gflops_per_sec(job.gflops, runtime_samples)
+        median_gflops = median_gflops_per_sec(job.gflops, runtime_samples)
         row = [
             str(start_time),
             self.hostname,
@@ -52,7 +52,7 @@ class StdoutReporter:
             job.batch_size,
             job.backend_name,
             runtime_secs,
-            "" if median_gflops_per_sec is None else median_gflops_per_sec,
+            "" if median_gflops is None else median_gflops,
             ", ".join(f"{s:.8f}" for s in runtime_samples),
             str(is_rt),
         ]

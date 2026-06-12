@@ -7,7 +7,7 @@ import time
 import types
 from typing import Any, Optional
 
-from . import _median_gflops_per_sec
+from .stats import median_gflops_per_sec
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ class GSheetsReporter:
         local_dir: pathlib.Path,
     ):
         uploaded_url = self._upload_dir(local_dir)
-        median_gflops_per_sec = _median_gflops_per_sec(job.gflops, runtime_samples)
+        median_gflops = median_gflops_per_sec(job.gflops, runtime_samples)
         row = [
             str(start_time),
             self.hostname,
@@ -85,7 +85,7 @@ class GSheetsReporter:
             job.batch_size,
             job.backend_name,
             runtime_secs,
-            "" if median_gflops_per_sec is None else median_gflops_per_sec,
+            "" if median_gflops is None else median_gflops,
             ", ".join(f"{s:.8f}" for s in runtime_samples),
             uploaded_url,
             "",
