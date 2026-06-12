@@ -20,6 +20,28 @@ Each `[job]` in a config. file supports the following fields:
    container.
 - `enable_perf` (boolean, default=false): Whether to enable Linux perf integration.
 
+## Reporting
+
+Benchmark results are sent to each configured reporter.
+
+By default, cherrybench prints benchmark result rows as CSV to standard output.
+To disable stdout reporting, set:
+
+```toml
+[reporters.stdout]
+enabled = false
+```
+
+### Google Sheets
+cherrybench also supports reporting to Google Sheets. To enable that, add:
+
+```toml
+[reporters.google_sheets]
+key_file = "service-account.json"
+sheet_name = "Benchmark Results"
+folder_name = "Benchmark Artifacts"
+```
+
 ## Job Partitioning
 
 To split the same job config across multiple machines, add a top-level

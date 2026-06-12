@@ -1,41 +1,70 @@
-import gspread
 import logging
-import platform
-import pathlib
-import pydrive2.auth
-import pydrive2.drive
-import oauth2client.service_account
 import mimetypes
-import time
+import pathlib
+import platform
 import random
-import google.oauth2.service_account
+import time
+import types
 from typing import Any, Optional
+
+from . import _median_gflops_per_sec
 
 logger = logging.getLogger(__name__)
 
 
+def _import_google_reporting_dependencies():
+    try:
+        import google.oauth2.service_account as google_service_account
+        import gspread
+        import oauth2client.service_account as oauth2_service_account
+        import pydrive2.auth as pydrive2_auth
+        import pydrive2.drive as pydrive2_drive
+    except ImportError as e:
+        raise RuntimeError(
+            "Google Sheets reporting dependencies are not installed"
+        ) from e
+
+    return types.SimpleNamespace(
+        google_service_account=google_service_account,
+        gspread=gspread,
+        oauth2_service_account=oauth2_service_account,
+        pydrive2_auth=pydrive2_auth,
+        pydrive2_drive=pydrive2_drive,
+    )
+
+
+def _is_gspread_api_error(error):
+    return isinstance(
+        error, _import_google_reporting_dependencies().gspread.exceptions.APIError
+    )
+
+
 class GSheetsReporter:
     def __init__(self, google_key_file: pathlib.Path, gsheet_name, remote_root_name):
+        deps = _import_google_reporting_dependencies()
+
         self.hostname = platform.node()
 
-        creds = google.oauth2.service_account.Credentials.from_service_account_file(
+        creds = deps.google_service_account.Credentials.from_service_account_file(
             google_key_file,
             scopes=[
                 "https://www.googleapis.com/auth/spreadsheets",
                 "https://www.googleapis.com/auth/drive",
             ],
         )
-        self.gc = gspread.Client(creds)
+        self.gc = deps.gspread.Client(creds)
         self.sheet = self.gc.open(gsheet_name).worksheet("Log")
         self.remote_root_name = remote_root_name
         self._existing_entries_cache: Optional[set[tuple]] = None
 
-        gauth = pydrive2.auth.GoogleAuth()
+        gauth = deps.pydrive2_auth.GoogleAuth()
         gauth.auth_method = "service"
-        gauth.credentials = oauth2client.service_account.ServiceAccountCredentials.from_json_keyfile_name(
-            google_key_file, "https://www.googleapis.com/auth/drive"
+        gauth.credentials = (
+            deps.oauth2_service_account.ServiceAccountCredentials.from_json_keyfile_name(
+                google_key_file, "https://www.googleapis.com/auth/drive"
+            )
         )
-        self.drive = pydrive2.drive.GoogleDrive(gauth)
+        self.drive = deps.pydrive2_drive.GoogleDrive(gauth)
 
     def log_result(
         self,
@@ -47,21 +76,7 @@ class GSheetsReporter:
         local_dir: pathlib.Path,
     ):
         uploaded_url = self._upload_dir(local_dir)
-
-        median_gflops_per_sec = ""
-        if job.gflops is not None and runtime_samples:
-            gflops_per_sec_samples = [job.gflops / s for s in runtime_samples if s > 0]
-            n = len(gflops_per_sec_samples)
-            if n:
-                sorted_samples = sorted(gflops_per_sec_samples)
-                mid = n // 2
-                if n % 2 == 1:
-                    median_gflops_per_sec = sorted_samples[mid]
-                else:
-                    median_gflops_per_sec = (
-                        sorted_samples[mid - 1] + sorted_samples[mid]
-                    ) / 2
-
+        median_gflops_per_sec = _median_gflops_per_sec(job.gflops, runtime_samples)
         row = [
             str(start_time),
             self.hostname,
@@ -70,7 +85,7 @@ class GSheetsReporter:
             job.batch_size,
             job.backend_name,
             runtime_secs,
-            median_gflops_per_sec,
+            "" if median_gflops_per_sec is None else median_gflops_per_sec,
             ", ".join(f"{s:.8f}" for s in runtime_samples),
             uploaded_url,
             "",
@@ -199,7 +214,9 @@ def _retry_with_backoff(func, max_retries=5, base_delay=3.0, max_delay=60.0):
     for attempt in range(max_retries + 1):
         try:
             return func()
-        except gspread.exceptions.APIError as e:
+        except Exception as e:
+            if not _is_gspread_api_error(e):
+                raise
             if attempt == max_retries:
                 logger.error(f"All retry attempts failed. Last API error: {e}")
                 raise

@@ -13,6 +13,7 @@ from .jobs import DockerfileJob
 MIN_SAMPLES = 5
 MIN_RUNTIME = 10  # seconds
 JOB_CHUNK_SIZE = 4  # TODO: Derive from core count
+STDOUT_REPORT_DEFAULT = True
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,18 @@ def load_config(input_file, job_filters=None):
         jobs = _filter_jobs_by_partition(jobs, data.get("job_partition"))
 
         reporters = []
-        for reporter_key, reporter_entry in data["reporters"].items():
+        reporter_entries = data.get("reporters", {})
+        stdout = reporter_entries.get("stdout", {}).get(
+            "enabled", STDOUT_REPORT_DEFAULT
+        )
+        if not isinstance(stdout, bool):
+            raise ValueError("reporters.stdout.enabled must be a boolean")
+        if stdout:
+            reporters.append(reporting.StdoutReporter())
+
+        for reporter_key, reporter_entry in reporter_entries.items():
+            if reporter_key == "stdout":
+                continue
             if reporter_key == "google_sheets":
                 reporters.append(
                     reporting.GSheetsReporter(
@@ -89,7 +101,7 @@ def load_config(input_file, job_filters=None):
                     )
                 )
             else:
-                raise ValueError(f"Unknown reporter type {reporter_entry['type']}")
+                raise ValueError(f"Unknown reporter type {reporter_key}")
 
         # Load optional max_work_time (in seconds)
         max_work_time = data.get("max_work_time")
