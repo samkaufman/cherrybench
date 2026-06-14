@@ -6,19 +6,29 @@ generated code.
 
 ## Job Configuration
 
-Each `[job]` in a config. file supports the following fields:
+Each `[[jobs]]` entry in a config file supports the following fields:
 
 - `name` (string): Unique identifier for the job.
 - `size` (integer): Problem size parameter for the benchmark.
 - `batch_size` (integer): Number of iterations per batch.
 - `backend_name` (string): Identifier of the backend under test.
-- `docker_path` (string): Path to the directory containing the Dockerfile.
-- `docker_build_args` (table): Map of build-time arguments passed to `docker build`.
+- `docker_path` (string): Path to the directory containing the Dockerfile. Required
+  when `image_ref` is absent.
+- `image_ref` (string): Image reference to run directly, such as `repo/name:tag`.
+  Required when `docker_path` is absent.
+- `docker_build_args` (table): Map of build-time arguments passed to `docker build`
+  when cherrybench builds an image from `docker_path`.
 - `command` (array[string]): Command and arguments to run inside the container.
 - `gflops` (number, optional): Total numbers of GFLOPS to complete the job.
 - `num_cores` (integer, default=1): Number of physical CPU cores to bind to the
    container.
 - `enable_perf` (boolean, default=false): Whether to enable Linux perf integration.
+
+Set exactly one of `docker_path` or `image_ref`. Existing configs that use
+`docker_path` continue to build an image before running the benchmark. Configs that
+use `image_ref` skip the build and run the container from that image reference. This
+lets artifact repositories ship exact Docker image archives, which evaluators can
+load with `docker image load` before running cherrybench.
 
 ## Reporting
 

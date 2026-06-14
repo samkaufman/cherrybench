@@ -27,14 +27,19 @@ class DockerfileJob:
     size: int
     batch_size: int
     backend_name: str
-    docker_path: pathlib.Path
+    docker_path: Optional[pathlib.Path]
     docker_build_args: dict[str, str]
     command: list[str]
     gflops: Optional[float] = None
     num_cores: int = 1  # Number of physical cores to use
     enable_perf: bool = False
+    image_ref: Optional[str] = None
+    _container_image: Optional[str] = dataclasses.field(init=False, default=None)
 
     def __post_init__(self):
+        if (self.docker_path is None) == (self.image_ref is None):
+            raise ValueError("Exactly one of docker_path or image_ref must be provided")
+
         # Initialize the global Docker client if needed.
         global _DOCKER_CLIENT
         if _DOCKER_CLIENT is None:
@@ -42,6 +47,18 @@ class DockerfileJob:
 
     def prepare(self):
         global _DOCKER_CLIENT
+        if self.image_ref is not None:
+            try:
+                _DOCKER_CLIENT.images.get(self.image_ref)
+            except docker.errors.ImageNotFound as e:
+                raise ValueError(
+                    f"Image reference {self.image_ref!r} was not found locally"
+                ) from e
+            self._container_image = self.image_ref
+            logger.info("Using image reference: %s", self.image_ref)
+            return
+
+        assert self.docker_path is not None
         build_args = dict(self.docker_build_args)
         if self.enable_perf:
             build_args["CHERRYBENCH_HOST_LINUX_VERSION"] = platform.release()
@@ -58,8 +75,8 @@ class DockerfileJob:
                 else:
                     logger.error(str(log_entry))
             raise
-        self.image = image
-        logger.info("Built image: %s", self.image.id)  # TODO: Downgrade to DEBUG
+        self._container_image = image.id
+        logger.info("Built image: %s", image.id)  # TODO: Downgrade to DEBUG
 
     def run(
         self,
@@ -69,6 +86,8 @@ class DockerfileJob:
     ) -> list[float]:
         global _DOCKER_CLIENT
         assert output_dir.is_dir()
+        if self._container_image is None:
+            raise RuntimeError(f"Job {self.name} must be prepared before it can run")
 
         if _ASSIGN_CORES:
             topology = lscpu.system_topology()
@@ -110,7 +129,7 @@ class DockerfileJob:
         if _ASSIGN_CORES:
             run_kwargs["cpuset_cpus"] = ",".join(str(c) for c in logical_cpus)
         container = _DOCKER_CLIENT.containers.run(
-            self.image.id, self.command, **run_kwargs
+            self._container_image, self.command, **run_kwargs
         )  # type: ignore
         assert isinstance(container, docker.models.containers.Container)
         try:

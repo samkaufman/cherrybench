@@ -75,6 +75,25 @@ def _parse_run_control(run_control_entry):
     return run_control
 
 
+def _parse_job_image_config(job_entry):
+    has_docker_path = "docker_path" in job_entry
+    has_image_ref = "image_ref" in job_entry
+    job_name = job_entry.get("name", "<unknown>")
+
+    if has_docker_path and has_image_ref:
+        raise ValueError(
+            f"Job {job_name!r} must not provide both docker_path and image_ref"
+        )
+    if not has_docker_path and not has_image_ref:
+        raise ValueError(
+            f"Job {job_name!r} must provide either docker_path or image_ref"
+        )
+
+    docker_path = pathlib.Path(job_entry["docker_path"]) if has_docker_path else None
+    image_ref = job_entry["image_ref"] if has_image_ref else None
+    return docker_path, image_ref
+
+
 def load_config(input_file, job_filters=None):
     with input_file.open("rb") as fo:
         data = tomllib.load(fo)
@@ -82,6 +101,7 @@ def load_config(input_file, job_filters=None):
 
         jobs = []
         for job_entry in data["jobs"]:
+            docker_path, image_ref = _parse_job_image_config(job_entry)
             if job_filters and not all(
                 f in job_entry["name"] or f in job_entry["backend_name"]
                 for f in job_filters
@@ -93,7 +113,8 @@ def load_config(input_file, job_filters=None):
                     size=job_entry["size"],
                     batch_size=int(job_entry["batch_size"]),
                     backend_name=job_entry["backend_name"],
-                    docker_path=pathlib.Path(job_entry["docker_path"]),
+                    docker_path=docker_path,
+                    image_ref=image_ref,
                     docker_build_args=job_entry.get("docker_build_args", {}),
                     command=job_entry["command"],
                     gflops=job_entry.get("gflops"),
