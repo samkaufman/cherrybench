@@ -59,6 +59,24 @@ deterministic SHA-256 hash of the job's `name`, so every job name maps to the sa
 partition on every machine. Jobs with the same `name` always run in the same
 partition.
 
+## Run Control
+
+By default, cherrybench starts each job with `CHERRYBENCH_LOOP_STEPS=5` and
+increases that value until the fastest sample represents at least 10 seconds of
+work. You can adjust these parameters with a top-level `[run_control]` table:
+
+```toml
+[run_control]
+min_loop_steps = 1
+min_runtime = 0
+```
+
+- `min_loop_steps` (positive integer, default=5): Initial value for
+  `CHERRYBENCH_LOOP_STEPS`.
+- `min_runtime` (nonnegative number, default=10): Minimum runtime in seconds
+  represented by the fastest sample before cherrybench stops increasing
+  `CHERRYBENCH_LOOP_STEPS`.
+
 ### Linux Perf Integration
 
 Jobs can optionally enable Linux perf integration by setting the `enable_perf` to

@@ -1,4 +1,5 @@
 import argparse
+import dataclasses
 import datetime
 import logging
 import math
@@ -10,12 +11,18 @@ import tomllib
 from . import host_config, partition, reporting
 from .jobs import DockerfileJob
 
-MIN_SAMPLES = 5
-MIN_RUNTIME = 10  # seconds
+DEFAULT_MIN_LOOP_STEPS = 5
+DEFAULT_MIN_RUNTIME = 10  # seconds
 JOB_CHUNK_SIZE = 4  # TODO: Derive from core count
 STDOUT_REPORT_DEFAULT = True
 
 logger = logging.getLogger(__name__)
+
+
+@dataclasses.dataclass(frozen=True)
+class RunControl:
+    min_loop_steps: int = DEFAULT_MIN_LOOP_STEPS
+    min_runtime: float = DEFAULT_MIN_RUNTIME
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument("-v", "--verbose", action="store_true")
@@ -51,9 +58,27 @@ def _filter_jobs_by_partition(jobs, partition_config):
     return selected_jobs
 
 
+def _parse_run_control(run_control_entry):
+    if not isinstance(run_control_entry, dict):
+        raise ValueError("run_control must be a table")
+
+    run_control = RunControl(
+        min_loop_steps=run_control_entry.get(
+            "min_loop_steps", DEFAULT_MIN_LOOP_STEPS
+        ),
+        min_runtime=run_control_entry.get("min_runtime", DEFAULT_MIN_RUNTIME),
+    )
+    if run_control.min_loop_steps <= 0:
+        raise ValueError("run_control.min_loop_steps must be positive")
+    if run_control.min_runtime < 0:
+        raise ValueError("run_control.min_runtime must be nonnegative")
+    return run_control
+
+
 def load_config(input_file, job_filters=None):
     with input_file.open("rb") as fo:
         data = tomllib.load(fo)
+        run_control = _parse_run_control(data.get("run_control", {}))
 
         jobs = []
         for job_entry in data["jobs"]:
@@ -143,23 +168,26 @@ def load_config(input_file, job_filters=None):
                 f"Unknown order value '{order}'. Supported values are 'random', 'sequential', and 'random-new-first'"
             )
 
-    return (jobs, reporters, max_work_time)
+    return (jobs, reporters, max_work_time, run_control)
 
 
-def run_job_to_sufficiency(job, output_dir, cherrybench_dir):
-    inner_loop_count = MIN_SAMPLES
+def run_job_to_sufficiency(job, output_dir, cherrybench_dir, run_control=None):
+    if run_control is None:
+        run_control = RunControl()
+    inner_loop_count = run_control.min_loop_steps
     samps = None
     # TODO: Tell user and quit if increasing loop count doesn't increase time.
     while True:
         samps = job.run(output_dir, inner_loop_count, cherrybench_dir)
         fastest_sample = min(samps)
         fastest_total_runtime = fastest_sample * inner_loop_count
-        if fastest_total_runtime >= MIN_RUNTIME:
+        if fastest_total_runtime >= run_control.min_runtime:
             break
         inner_loop_count = max(
             inner_loop_count + 1,
             math.ceil(
-                inner_loop_count * min(10, MIN_RUNTIME / fastest_total_runtime)
+                inner_loop_count
+                * min(10, run_control.min_runtime / fastest_total_runtime)
             ),
         )
         logger.debug(
@@ -170,7 +198,9 @@ def run_job_to_sufficiency(job, output_dir, cherrybench_dir):
     return samps
 
 
-def run(jobs, reporters, max_work_time=None) -> None:
+def run(jobs, reporters, max_work_time=None, run_control=None) -> None:
+    if run_control is None:
+        run_control = RunControl()
     process_start_time = datetime.datetime.now()
     if max_work_time is not None:
         logger.info("Maximum work time set to %.1f seconds", max_work_time)
@@ -208,7 +238,7 @@ def run(jobs, reporters, max_work_time=None) -> None:
                         logger.debug("Temporary output directory is %s", output_dir)
                         start_time = datetime.datetime.now()
                         runtime_samples = run_job_to_sufficiency(
-                            job, output_dir, cherrybench_dir
+                            job, output_dir, cherrybench_dir, run_control
                         )
                         for reporter in reporters:
                             reporter.log_result(
