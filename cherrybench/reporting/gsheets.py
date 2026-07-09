@@ -19,6 +19,7 @@ def _import_google_reporting_dependencies():
         import oauth2client.service_account as oauth2_service_account
         import pydrive2.auth as pydrive2_auth
         import pydrive2.drive as pydrive2_drive
+        import requests
     except ImportError as e:
         raise RuntimeError(
             "Google Sheets reporting dependencies are not installed"
@@ -30,12 +31,19 @@ def _import_google_reporting_dependencies():
         oauth2_service_account=oauth2_service_account,
         pydrive2_auth=pydrive2_auth,
         pydrive2_drive=pydrive2_drive,
+        requests=requests,
     )
 
 
-def _is_gspread_api_error(error):
+def _is_retryable_google_reporting_error(error):
+    deps = _import_google_reporting_dependencies()
     return isinstance(
-        error, _import_google_reporting_dependencies().gspread.exceptions.APIError
+        error,
+        (
+            deps.gspread.exceptions.APIError,
+            deps.requests.exceptions.ConnectionError,
+            deps.requests.exceptions.Timeout,
+        ),
     )
 
 
@@ -203,7 +211,7 @@ class GSheetsReporter:
 
 
 def _retry_with_backoff(func, max_retries=5, base_delay=3.0, max_delay=60.0):
-    """Retry a function with exponential backoff upon `gspread` API errors.
+    """Retry a function with exponential backoff after transient reporting errors.
 
     Args:
         func: Function to retry
@@ -215,10 +223,10 @@ def _retry_with_backoff(func, max_retries=5, base_delay=3.0, max_delay=60.0):
         try:
             return func()
         except Exception as e:
-            if not _is_gspread_api_error(e):
+            if not _is_retryable_google_reporting_error(e):
                 raise
             if attempt == max_retries:
-                logger.error(f"All retry attempts failed. Last API error: {e}")
+                logger.error(f"All retry attempts failed. Last reporting error: {e}")
                 raise
 
             # Calculate delay with exponential backoff and jitter
