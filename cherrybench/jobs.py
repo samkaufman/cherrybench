@@ -16,6 +16,7 @@ CHERRYBENCH_MOUNT_PATH = "/cherrybench"
 
 _DOCKER_CLIENT: docker.DockerClient = None  # type: ignore
 _DOCKER_EXCEPTION_STOP_TIMEOUT = 2
+_PREPARED_IMAGE_REPOSITORY = "cherrybench-prepared"
 _ASSIGN_CORES = False
 
 logger = logging.getLogger(__name__)
@@ -75,8 +76,13 @@ class DockerfileJob:
                 else:
                     logger.error(str(log_entry))
             raise
-        self._container_image = image.id
-        logger.info("Built image: %s", image.id)  # TODO: Downgrade to DEBUG
+        # Tag the build. A chunk of jobs is prepared up front but run one at a
+        # time, so an untagged image can sit dangling for hours behind a slow
+        # sibling job and be reclaimed before its own job starts.
+        image_digest = image.id.removeprefix("sha256:")
+        self._container_image = f"{_PREPARED_IMAGE_REPOSITORY}:{image_digest}"
+        image.tag(_PREPARED_IMAGE_REPOSITORY, tag=image_digest)
+        logger.debug("Built image: %s (tagged as %s)", image.id, self._container_image)
 
     def run(
         self,
