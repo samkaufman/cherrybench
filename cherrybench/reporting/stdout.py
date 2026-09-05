@@ -8,6 +8,7 @@ import sys
 import types
 import unittest
 
+from ..results import BenchmarkResult, SuccessResult, UnsatisfiableResult
 from .stats import median_gflops_per_sec
 
 STDOUT_COLUMNS = [
@@ -21,6 +22,8 @@ STDOUT_COLUMNS = [
     "median_gflops_per_sec",
     "runtime_samples",
     "is_rt",
+    "status",
+    "reason",
 ]
 
 
@@ -33,11 +36,20 @@ class StdoutReporter:
         self,
         start_time,
         job,
-        runtime_secs: float,
-        runtime_samples,
+        result: BenchmarkResult,
         is_rt: bool,
         local_dir: pathlib.Path,
     ):
+        match result:
+            case SuccessResult(
+                fastest_runtime_secs=runtime_secs, runtime_samples=runtime_samples
+            ):
+                status, reason = "success", ""
+            case UnsatisfiableResult(reason=reason):
+                runtime_secs, runtime_samples = None, ()
+                status, reason = "unsatisfiable", reason or ""
+            case _:
+                raise TypeError(f"Unknown benchmark result: {type(result).__name__}")
         writer = csv.writer(sys.stdout, lineterminator="\n")
         if not self._wrote_header:
             writer.writerow(STDOUT_COLUMNS)
@@ -55,6 +67,8 @@ class StdoutReporter:
             "" if median_gflops is None else median_gflops,
             ", ".join(f"{s:.8f}" for s in runtime_samples),
             str(is_rt),
+            status,
+            reason or "",
         ]
         writer.writerow(row)
         sys.stdout.flush()
@@ -80,8 +94,7 @@ class StdoutReporterTest(unittest.TestCase):
             reporter.log_result(
                 datetime.datetime(2026, 1, 2, 3, 4, 5),
                 job,
-                1.0,
-                [2.0, 1.0, 4.0],
+                SuccessResult((2.0, 1.0, 4.0)),
                 False,
                 pathlib.Path("."),
             )
@@ -102,5 +115,7 @@ class StdoutReporterTest(unittest.TestCase):
                 "10.0",
                 "2.00000000, 1.00000000, 4.00000000",
                 "False",
+                "success",
+                "",
             ],
         )

@@ -10,6 +10,7 @@ import tomllib
 
 from . import host_config, partition, reporting
 from .jobs import DockerfileJob
+from .results import BenchmarkResult, UnsatisfiableResult
 
 DEFAULT_MIN_LOOP_STEPS = 5
 DEFAULT_MIN_RUNTIME = 10  # seconds
@@ -192,15 +193,18 @@ def load_config(input_file, job_filters=None):
     return (jobs, reporters, max_work_time, run_control)
 
 
-def run_job_to_sufficiency(job, output_dir, cherrybench_dir, run_control=None):
+def run_job_to_sufficiency(
+    job, output_dir, cherrybench_dir, run_control=None
+) -> BenchmarkResult:
     if run_control is None:
         run_control = RunControl()
     inner_loop_count = run_control.min_loop_steps
-    samps = None
     # TODO: Tell user and quit if increasing loop count doesn't increase time.
     while True:
-        samps = job.run(output_dir, inner_loop_count, cherrybench_dir)
-        fastest_sample = min(samps)
+        result = job.run(output_dir, inner_loop_count, cherrybench_dir)
+        if isinstance(result, UnsatisfiableResult):
+            return result
+        fastest_sample = result.fastest_runtime_secs
         fastest_total_runtime = fastest_sample * inner_loop_count
         if fastest_total_runtime >= run_control.min_runtime:
             break
@@ -216,7 +220,7 @@ def run_job_to_sufficiency(job, output_dir, cherrybench_dir, run_control=None):
             fastest_sample,
             inner_loop_count,
         )
-    return samps
+    return result
 
 
 def run(jobs, reporters, max_work_time=None, run_control=None) -> None:
@@ -258,15 +262,20 @@ def run(jobs, reporters, max_work_time=None, run_control=None) -> None:
                         output_dir = pathlib.Path(output_dir)
                         logger.debug("Temporary output directory is %s", output_dir)
                         start_time = datetime.datetime.now()
-                        runtime_samples = run_job_to_sufficiency(
+                        result = run_job_to_sufficiency(
                             job, output_dir, cherrybench_dir, run_control
                         )
+                        if isinstance(result, UnsatisfiableResult):
+                            logger.info(
+                                "Job %s is unsatisfiable: %s",
+                                job.name,
+                                result.reason or "no reason given",
+                            )
                         for reporter in reporters:
                             reporter.log_result(
                                 start_time,
                                 job,
-                                min(runtime_samples),
-                                runtime_samples,
+                                result,
                                 is_rt=False,  # TODO: Change when RT is supported
                                 local_dir=output_dir,
                             )

@@ -1,5 +1,8 @@
+from collections.abc import Sequence
+
+
 def median_gflops_per_sec(
-    gflops: float | None, runtime_samples: list[float]
+    gflops: float | None, runtime_samples: Sequence[float]
 ) -> float | None:
     """Return median achieved GFLOP/s, or None when it cannot be computed."""
     if gflops is None or not runtime_samples:

@@ -11,6 +11,7 @@ import docker.models.containers
 import docker.types
 
 from . import lscpu
+from .results import BenchmarkResult, SuccessResult, UnsatisfiableResult
 
 CHERRYBENCH_MOUNT_PATH = "/cherrybench"
 
@@ -89,7 +90,7 @@ class DockerfileJob:
         output_dir: pathlib.Path,
         inner_steps: int,
         cherrybench_dir: Optional[pathlib.Path] = None,
-    ) -> list[float]:
+    ) -> BenchmarkResult:
         global _DOCKER_CLIENT
         assert output_dir.is_dir()
         if self._container_image is None:
@@ -154,17 +155,41 @@ class DockerfileJob:
 
             r = container.logs(stdout=True, stderr=False)
             assert isinstance(r, bytes)
-            r = r.decode("utf-8").strip()
-            runtime_secs = []
-            for line in r.splitlines():
-                if line.endswith("ns"):
-                    line = line[:-2]
-                    runtime_secs.append(float(line) / (inner_steps * 1_000_000_000))
-                else:
-                    if line.endswith("s"):
-                        line = line[:-1]
-                    runtime_secs.append(float(line) / inner_steps)
-            return runtime_secs
+            return _parse_benchmark_output(r.decode("utf-8"), inner_steps)
         finally:
             container.stop(timeout=_DOCKER_EXCEPTION_STOP_TIMEOUT)
             container.remove()
+
+
+def _parse_benchmark_output(
+    output: str, inner_steps: int
+) -> BenchmarkResult:
+    r"""Parse timing or an unsatisfiable outcome from stdout.
+
+    >>> _parse_benchmark_output("10s\n5000000000ns", inner_steps=5)
+    SuccessResult(runtime_samples=(2.0, 1.0))
+    >>> _parse_benchmark_output("unsatisfiable: no usable schedule", inner_steps=5)
+    UnsatisfiableResult(reason='no usable schedule')
+    """
+
+    lines = output.strip().splitlines()
+    if len(lines) == 1:
+        if lines[0] == "unsatisfiable":
+            return UnsatisfiableResult()
+        if lines[0].startswith("unsatisfiable:"):
+            reason = lines[0].removeprefix("unsatisfiable:").strip()
+            if not reason:
+                raise ValueError("Expected a reason after 'unsatisfiable:'")
+            return UnsatisfiableResult(reason)
+    if any(line.startswith("unsatisfiable") for line in lines):
+        raise ValueError("Expected a single unsatisfiable marker without timing samples")
+    if not lines:
+        raise ValueError("Benchmark emitted no timing samples or unsatisfiable marker")
+
+    runtime_secs = []
+    for line in lines:
+        if line.endswith("ns"):
+            runtime_secs.append(float(line[:-2]) / (inner_steps * 1_000_000_000))
+        else:
+            runtime_secs.append(float(line.removesuffix("s")) / inner_steps)
+    return SuccessResult(tuple(runtime_secs))

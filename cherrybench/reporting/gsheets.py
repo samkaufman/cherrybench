@@ -7,6 +7,7 @@ import time
 import types
 from typing import Any, Optional
 
+from ..results import BenchmarkResult, SuccessResult, UnsatisfiableResult
 from .stats import median_gflops_per_sec
 
 logger = logging.getLogger(__name__)
@@ -78,11 +79,20 @@ class GSheetsReporter:
         self,
         start_time,
         job,
-        runtime_secs: float,
-        runtime_samples,
+        result: BenchmarkResult,
         is_rt: bool,
         local_dir: pathlib.Path,
     ):
+        match result:
+            case SuccessResult(
+                fastest_runtime_secs=runtime_secs, runtime_samples=runtime_samples
+            ):
+                status, reason = "success", ""
+            case UnsatisfiableResult(reason=reason):
+                runtime_secs, runtime_samples = None, ()
+                status, reason = "unsatisfiable", reason or ""
+            case _:
+                raise TypeError(f"Unknown benchmark result: {type(result).__name__}")
         uploaded_url = self._upload_dir(local_dir)
         median_gflops = median_gflops_per_sec(job.gflops, runtime_samples)
         row = [
@@ -92,7 +102,7 @@ class GSheetsReporter:
             job.size,
             job.batch_size,
             job.backend_name,
-            runtime_secs,
+            "" if runtime_secs is None else runtime_secs,
             "" if median_gflops is None else median_gflops,
             ", ".join(f"{s:.8f}" for s in runtime_samples),
             uploaded_url,
@@ -100,6 +110,8 @@ class GSheetsReporter:
             "",
             "",
             str(is_rt),
+            status,
+            reason or "",
         ]
 
         # Retry the sheet append operation with exponential backoff
