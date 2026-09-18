@@ -142,7 +142,8 @@ def load_config(input_file, job_filters=None):
                 reporters.append(
                     reporting.GSheetsReporter(
                         google_key_file=pathlib.Path(reporter_entry["key_file"]),
-                        gsheet_name=reporter_entry["sheet_name"],
+                        gsheet_name=reporter_entry.get("sheet_name"),
+                        gsheet_key=reporter_entry.get("sheet_key"),
                         remote_root_name=reporter_entry["folder_name"],
                     )
                 )

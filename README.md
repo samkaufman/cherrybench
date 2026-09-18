@@ -52,6 +52,9 @@ sheet_name = "Benchmark Results"
 folder_name = "Benchmark Artifacts"
 ```
 
+Instead of `sheet_name`, you can give `sheet_key`: the spreadsheet ID from its
+URL (`https://docs.google.com/spreadsheets/d/<sheet_key>/edit`).
+
 ## Job Partitioning
 
 To split the same job config across multiple machines, add a top-level

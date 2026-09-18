@@ -48,7 +48,16 @@ def _is_retryable_google_reporting_error(error):
 
 
 class GSheetsReporter:
-    def __init__(self, google_key_file: pathlib.Path, gsheet_name, remote_root_name):
+    def __init__(
+        self,
+        google_key_file: pathlib.Path,
+        remote_root_name,
+        gsheet_name: Optional[str] = None,
+        gsheet_key: Optional[str] = None,
+    ):
+        if (gsheet_name is None) == (gsheet_key is None):
+            raise ValueError("Exactly one of gsheet_name or gsheet_key must be given")
+
         deps = _import_google_reporting_dependencies()
 
         self.hostname = platform.node()
@@ -61,7 +70,11 @@ class GSheetsReporter:
             ],
         )
         self.gc = deps.gspread.Client(creds)
-        self.sheet = self.gc.open(gsheet_name).worksheet("Log")
+        if gsheet_key is not None:
+            spreadsheet = self.gc.open_by_key(gsheet_key)
+        else:
+            spreadsheet = self.gc.open(gsheet_name)
+        self.sheet = spreadsheet.worksheet("Log")
         self.remote_root_name = remote_root_name
         self._existing_entries_cache: Optional[set[tuple]] = None
 
